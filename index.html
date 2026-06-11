@@ -276,37 +276,42 @@
     }
 
     async function submitVote() {
-        if (!validateScores()) return;
+  if (!validateScores()) return;
 
-        const name = userNameInput.value.trim();
-        const result = document.querySelector('input[name="result"]:checked').value;
-        const t1 = parseInt(document.getElementById('team1Score').value) || 0;
-        const t2 = parseInt(document.getElementById('team2Score').value) || 0;
+  const name = userNameInput.value.trim();
+  const result = document.querySelector('input[name="result"]:checked').value;
+  const t1 = parseInt(document.getElementById('team1Score').value) || 0;
+  const t2 = parseInt(document.getElementById('team2Score').value) || 0;
 
-        try {
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, team: result, scoreHome: t1, scoreAway: t2 })
-            });
+  try {
+    // 중요: headers 의 Content-Type 을 text/plain 으로 변경
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 변경됨
+      body: JSON.stringify({ name, team: result, scoreHome: t1, scoreAway: t2 })
+    });
 
-            const data = await response.json();
-            if (!response.ok || data.error) {
-                throw new Error(data.error || '서버 오류 발생');
-            }
+    const data = await response.text(); // text() 로 읽음
 
-            showAlert("투표가 완료되었습니다!", "success");
-            loginSection.classList.remove('hidden');
-            voteSection.classList.add('hidden');
-            userNameInput.value = '';
-
-            // 성공 시 데이터 다시 로드
-            loadVotes();
-
-        } catch (err) {
-            showAlert("투표 실패: " + err.message, "error");
-        }
+    try {
+      const jsonData = JSON.parse(data);
+      if (!response.ok || jsonData.error) {
+        throw new Error(jsonData.error || '서버 오류 발생');
+      }
+      showAlert("투표가 완료되었습니다!", "success");
+      loginSection.classList.remove('hidden');
+      voteSection.classList.add('hidden');
+      userNameInput.value = '';
+      loadVotes();
+    } catch (e) {
+      // JSON 파싱 실패 시 처리
+      showAlert("투표 실패: " + data, "error");
     }
+
+  } catch (err) {
+    showAlert("투표 실패: " + err.message, "error");
+  }
+}
 
     function renderAdminDashboard() {
         const total = votes.length;
