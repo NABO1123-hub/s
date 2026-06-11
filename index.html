@@ -122,7 +122,7 @@
                 <tr>
                     <th>이름</th>
                     <th>결과</th>
-                    <th>점수</th>
+                    <th>점수 (1 팀 - 2 팀)</th>
                     <th>시간</th>
                 </tr>
             </thead>
@@ -134,9 +134,8 @@
 </div>
 
 <script>
-    // ⚠️ 여기에 GAS 에서 배포한 실제 URL 을 붙여넣으세요 ⚠️
-    // 예: https://script.google.com/macros/s/AKfycbyWomuvXm1ujsTzJ37BhhOzaWWWyh18JYqFNcJUB96VZc8zKEJTT0woCi3skAKrXJ6a/exec
-    const API_URL = 'YOUR_ACTUAL_GAS_WEBAPP_URL_HERE'; 
+    // ⚠️ 여기에 1 단계에서 복사한 웹앱 URL 을 붙여넣으세요
+    const API_URL = 'https://script.google.com/macros/s/AKfycbzPgDtxWDUP2EJsJIqySSTYR-HVEXDtaQXvV6L_VTdyLg8334YQI--j8S89Ggt1JuM/exec'; 
     let votes = [];
 
     const loginSection = document.getElementById('loginSection');
@@ -149,27 +148,20 @@
     async function loadVotes() {
         try {
             const response = await fetch(API_URL, { method: 'GET' });
-            // CORS 오류가 발생하면 여기서 잡히지만, GAS 설정이 맞다면 성공해야 함
-            if (!response.ok) throw new Error('네트워크 오류: ' + response.status);
-
             const data = await response.json();
 
             if (data.error) throw new Error(data.error);
 
-            // GAS 에서 반환된 데이터 형식 확인 (배열인지, 객체인지 확인)
-            if (!Array.isArray(data)) {
-                votes = [];
-            } else {
-                // GAS 코드가 id, time 등을 포함하도록 수정되었으므로 그대로 사용
-                votes = data;
-            }
+            // Apps Script 에서 반환된 데이터 구조 확인
+            // [{ time: ..., name: ..., team: ..., scoreHome: ..., scoreAway: ... }, ...]
+            votes = Array.isArray(data) ? data : [];
 
             if (adminSection && !adminSection.classList.contains('hidden')) {
                 renderAdminDashboard();
             }
         } catch (err) {
             console.error("데이터 로드 실패:", err);
-            showAlert("데이터를 불러오지 못했습니다. 관리자 (ADMIN) 로 로그인했는지 확인하세요.", "error");
+            showAlert("데이터를 불러오는데 실패했습니다.", "error");
         }
     }
 
@@ -190,6 +182,7 @@
     }
 
     function goBackUp() {
+        if (!loginSection.classList.contains('hidden')) return;
         loginSection.classList.remove('hidden');
         voteSection.classList.add('hidden');
         adminSection.classList.add('hidden');
@@ -205,30 +198,27 @@
         }
 
         const isAdmin = (name.toUpperCase() === 'ADMIN');
+        // 중복 체크 (관리자 제외)
+        const isDuplicate = votes.some(v => v.name === name && !v.isAdmin);
 
         if (isAdmin) {
             loginSection.classList.add('hidden');
             voteSection.classList.add('hidden');
             adminSection.classList.remove('hidden');
             showAlert("관리자 모드로 진입했습니다.", "success");
-            loadVotes(); // 관리자 모드일 때 데이터 로드
+            renderAdminDashboard();
+        } else if (isDuplicate) {
+            showAlert("이미 투표하신 이름입니다. 중복 투표는 불가능합니다.", "error");
+            userNameInput.value = '';
+            userNameInput.focus();
         } else {
-            // 일반 사용자 중복 체크 (간단한 클라이언트 측 체크)
-            const isDuplicate = votes.some(v => v.name === name);
-
-            if (isDuplicate) {
-                showAlert("이미 투표하신 이름입니다.", "error");
-                userNameInput.value = '';
-                userNameInput.focus();
-            } else {
-                loginSection.classList.add('hidden');
-                voteSection.classList.remove('hidden');
-                adminSection.classList.add('hidden');
-                showAlert(`${name}님 환영합니다!`, "success");
-                // 기본 점수 설정
-                document.getElementById('team1Score').value = 0;
-                document.getElementById('team2Score').value = 0;
-            }
+            loginSection.classList.add('hidden');
+            voteSection.classList.remove('hidden');
+            adminSection.classList.add('hidden');
+            showAlert(`${name}님 환영합니다! 투표해주세요.`, "success");
+            // 기본 점수 세팅
+            document.getElementById('team1Score').value = 0;
+            document.getElementById('team2Score').value = 0;
         }
     }
 
@@ -238,11 +228,14 @@
         const t2Input = document.getElementById('team2Score');
 
         if (result === 'home') {
-            t1Input.value = 1; t2Input.value = 0;
+            t1Input.value = 1;
+            t2Input.value = 0;
         } else if (result === 'away') {
-            t1Input.value = 0; t2Input.value = 1;
+            t1Input.value = 0;
+            t2Input.value = 1;
         } else {
-            t1Input.value = 0; t2Input.value = 0;
+            t1Input.value = 0;
+            t2Input.value = 0;
         }
         validateScores(true);
     }
@@ -256,15 +249,21 @@
         let isValid = true;
         let message = "";
 
-        if (result === 'home' && t1 <= t2) {
-            isValid = false;
-            message = "1 팀 승을 선택하셨습니다. 1 팀의 득점이 더 높아야 합니다.";
-        } else if (result === 'away' && t2 <= t1) {
-            isValid = false;
-            message = "2 팀 승을 선택하셨습니다. 2 팀의 득점이 더 높아야 합니다.";
-        } else if (result === 'draw' && t1 !== t2) {
-            isValid = false;
-            message = "무승부를 선택하셨습니다. 두 팀의 득점이 동일해야 합니다.";
+        if (result === 'home') {
+            if (t1 <= t2) {
+                isValid = false;
+                message = "1 팀 승을 선택하셨습니다. 1 팀의 득점이 2 팀보다 높아야 합니다.";
+            }
+        } else if (result === 'away') {
+            if (t2 <= t1) {
+                isValid = false;
+                message = "2 팀 승을 선택하셨습니다. 2 팀의 득점이 1 팀보다 높아야 합니다.";
+            }
+        } else if (result === 'draw') {
+            if (t1 !== t2) {
+                isValid = false;
+                message = "무승부를 선택하셨습니다. 두 팀의 득점이 동일해야 합니다.";
+            }
         }
 
         if (!isValid) {
@@ -288,22 +287,20 @@
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, result, score1: t1, score2: t2 })
+                body: JSON.stringify({ name, team: result, scoreHome: t1, scoreAway: t2 })
             });
 
             const data = await response.json();
-
-            if (!response.ok || !data.success) {
+            if (!response.ok || data.error) {
                 throw new Error(data.error || '서버 오류 발생');
             }
 
             showAlert("투표가 완료되었습니다!", "success");
-            // 성공 시 다시 로그인 화면으로
             loginSection.classList.remove('hidden');
             voteSection.classList.add('hidden');
             userNameInput.value = '';
 
-            // 데이터 새로고침 (중복 방지를 위해)
+            // 성공 시 데이터 다시 로드
             loadVotes();
 
         } catch (err) {
@@ -312,22 +309,12 @@
     }
 
     function renderAdminDashboard() {
-        if (votes.length === 0) {
-            document.getElementById('totalCount').textContent = '0';
-            document.getElementById('countHome').textContent = '0';
-            document.getElementById('countDraw').textContent = '0';
-            document.getElementById('countAway').textContent = '0';
-            document.getElementById('avgScore').textContent = '0.0';
-            document.getElementById('adminTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center">데이터가 없습니다.</td></tr>';
-            return;
-        }
-
         const total = votes.length;
-        const homeWins = votes.filter(v => v.result === 'home').length;
-        const draws = votes.filter(v => v.result === 'draw').length;
-        const awayWins = votes.filter(v => v.result === 'away').length;
+        const homeWins = votes.filter(v => v.team === 'home').length;
+        const draws = votes.filter(v => v.team === 'draw').length;
+        const awayWins = votes.filter(v => v.team === 'away').length;
 
-        const allScores = votes.map(v => v.score1 + v.score2);
+        const allScores = votes.map(v => (parseInt(v.scoreHome) || 0) + (parseInt(v.scoreAway) || 0));
         const avg = allScores.length > 0 
             ? (allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(1) 
             : 0;
@@ -338,43 +325,37 @@
         document.getElementById('countAway').textContent = awayWins;
         document.getElementById('avgScore').textContent = avg;
 
-        // 테이블 렌더링
         const tbody = document.getElementById('adminTableBody');
         tbody.innerHTML = '';
 
-        // 최신 순 정렬을 위해 역순으로 순회 (선택사항)
-        [...votes].reverse().forEach(v => {
-            const tr = document.createElement('tr');
-            const timeStr = v.time.toLocaleString(); // 날짜 객체를 문자열로
-            const resultText = v.result === 'home' ? '1 팀 승' : (v.result === 'away' ? '2 팀 승' : '무승부');
+        // 시간 순 정렬 (최신순)
+        const sortedVotes = [...votes].sort((a, b) => new Date(b.time) - new Date(a.time));
 
-            tr.innerHTML = `
-                <td>${v.name}</td>
-                <td>${resultText}</td>
-                <td>${v.score1} - ${v.score2}</td>
+        sortedVotes.forEach(vote => {
+            const row = document.createElement('tr');
+            const timeStr = new Date(vote.time).toLocaleString();
+
+            let teamText = '';
+            if(vote.team === 'home') teamText = '1 팀 승';
+            else if(vote.team === 'away') teamText = '2 팀 승';
+            else teamText = '무승부';
+
+            row.innerHTML = `
+                <td>${vote.name}</td>
+                <td>${teamText}</td>
+                <td>${vote.scoreHome} - ${vote.scoreAway}</td>
                 <td>${timeStr}</td>
             `;
-            tbody.appendChild(tr);
+            tbody.appendChild(row);
         });
     }
 
-    async function resetData() {
+    function resetData() {
         if(!confirm("정말로 모든 투표 데이터를 삭제하시겠습니까?")) return;
-
-        try {
-            const response = await fetch(API_URL.replace('/exec', '/delete'), { method: 'DELETE' }); 
-            // 주의: GAS 에서 doDelete 함수를 웹앱으로 노출하려면 deploy 설정이 필요할 수 있음.
-            // 만약 DELETE 가 안 된다면, GAS 콘솔에서 직접 실행하거나 별도 버튼을 만들어야 함.
-            // 여기서는 간단히 GET 으로 다시 불러와서 초기화하는 시뮬레이션을 하거나,
-            // 실제로는 GAS 에서 doDelete 를 webapp 으로 배포해야 함.
-
-            // 대안: 사용자에게 알림 후 수동 초기화 안내
-            alert("데이터 초기화는 GAS 콘솔에서 'resetData' 함수를 실행하거나, \nGAS 를 재배포하여 DELETE 메서드를 활성화해야 합니다.\n
-현재 데모에서는 자동 초기화가 제한됩니다.");
-            loadVotes();
-        } catch (e) {
-            alert("초기화 중 오류 발생: " + e.message);
-        }
+        // 실제 삭제 기능은 Apps Script 에 별도 함수가 필요하므로 여기서는 알림만 표시하거나
+        // 간단히 새로고침을 유도합니다. (실제 삭제 구현은 생략)
+        alert("데이터 초기화는 관리자용 별도 스크립트 함수가 필요합니다. 현재는 새로고침만 됩니다.");
+        location.reload();
     }
 </script>
 </body>
